@@ -3,13 +3,17 @@ from linebot import (
     LineBotApi, WebhookHandler
 )
 from linebot.exceptions import (
-    InvalidSignatureError, LineBotApiError
+    InvalidSignatureError
 )
 from linebot.models import (
     MessageEvent, TextMessage, TextSendMessage, TemplateSendMessage, ButtonsTemplate, DatetimePickerTemplateAction, PostbackEvent
 )
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, time
+import os
+from dotenv import load_dotenv
+# .envファイルの内容を読み込みます
+load_dotenv()
 
 
 app = Flask(__name__)
@@ -19,11 +23,12 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///db.sqlite'
 db = SQLAlchemy(app)
 
 class DB(db.Model):
+    __tablename__ = 'events'
     id = db.Column(db.Integer, primary_key=True)
-    event_name = db.Column(db.String(100), nullable=False)
-    event_datetime = db.Column(db.DateTime, nullable=False)
-    send_time = db.Column(db.Time, nullable=False)
-    #ユーザーを識別するためのLINEのユーザー情報も必要だと思われ
+    event_name = db.Column(db.String(100))
+    event_datetime = db.Column(db.DateTime)
+    send_time = db.Column(db.Time)
+    # , nullable=False
 
 with app.app_context():
     db.create_all()
@@ -43,8 +48,8 @@ with app.app_context():
         print(result.event_name, result.event_datetime, result.send_time)
 
 
-CHANNEL_ACCESS_TOKEN = "MWItH/5GyF/l9wg8M5fVY8HCOXTK6ojEhmQQWa6m3JX5lWntShvFS5Eu1ihMKECdyOedX6AhzLMjUSVuAqLOVr/XnndAxyNs2C/ldWdEqQEW3yylHTOQmeKwwHMqnGGJmd9hPtZnYVBD7P0vAPNwqgdB04t89/1O/w1cDnyilFU="
-CHANNEL_SECRET = "40fe315ab82434c0e2187ab9a5bb8cba"
+CHANNEL_ACCESS_TOKEN = os.environ['CHANNEL_ACCESS_TOKEN']
+CHANNEL_SECRET = os.environ['CHANNEL_SECRET']
 line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(CHANNEL_SECRET)
 
@@ -78,8 +83,17 @@ def handle_message(event):
 
     event_name = event.message.text #受け取ったテキストメッセージを取得
     print(event_name)
+    db.session.add(DB(event_name=event_name)) # DBに格納
+    db.session.commit()
+    
+    # 同じレコードにデータをいれるため、この後使うidを定義する
+    results = DB.query.all() # リスト型で取り出されるので
+    result = results[-1] # リストの最後尾(最新のデータ)を指定
+    global id
+    id = result.id
+    print(id)
 
-    #日時選択アクションを定義
+    # 日時選択アクションを定義
     message = TemplateSendMessage(
         alt_text="予定日時",
         template=ButtonsTemplate(
@@ -99,12 +113,11 @@ def handle_message(event):
             ]
         )
     )
-    #予定の日時を聞くメッセージを送信
+    # 予定の日時を聞くメッセージを送信
     line_bot_api.reply_message(
         event.reply_token,
         message
     )
-    # return event_name
 
 
 @handler.add(PostbackEvent) #PostbackEventが発生したとき
@@ -115,7 +128,16 @@ def handle_postback(event):
         selected_datetime = event.postback.params['datetime'] #ユーザーが選択した日時の値を取得
         print(selected_datetime)
 
-        #時間選択アクションを定義
+        # DBのdatetime型に格納するために、LINEのdatetime型からPythonのdatetime型に変更する
+        selected_datetime = datetime.strptime('2023-02-06T10:00', '%Y-%m-%dT%H:%M')
+        print(selected_datetime)
+
+        # idを指定して同じレコードのカラムにデータを保存する
+        record = db.session.query(DB).get(id)
+        record.event_datetime = selected_datetime
+        db.session.commit()
+
+        # 時間選択アクションを定義
         message = TemplateSendMessage(
 		alt_text="アラーム",
 		template=ButtonsTemplate(
@@ -138,11 +160,22 @@ def handle_postback(event):
         line_bot_api.reply_message(
             event.reply_token,
             messages
-        ) 
+        )
 
     elif data == 'send_time': #通知時間に対する回答だった場合
         selected_send_time = event.postback.params['time'] #ユーザーが選択した通知時間の値を取得
         print(selected_send_time)
+
+        # DBのtime型に格納するために、LINEのtime型からPythonのtime型に変更する
+        dt_str = selected_send_time + ':00'
+        dt_obj = datetime.strptime(dt_str, '%H:%M:%S')
+        selected_send_time = dt_obj.time()
+        print(selected_send_time)
+
+        # idを指定して同じレコードのカラムにデータを保存する
+        record = db.session.query(DB).get(id)
+        record.send_time = selected_send_time
+        db.session.commit()
 
         #確認のメッセージを送信
         line_bot_api.reply_message(
@@ -151,4 +184,5 @@ def handle_postback(event):
 
 
 if __name__ == "__main__":
+    # port = int(os.getenv("PORT"))
     app.run(host="localhost", port=8000)
