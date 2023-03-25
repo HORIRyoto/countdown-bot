@@ -22,6 +22,8 @@ app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///db.sqlite'
 db = SQLAlchemy(app)
 
+
+# DBを定義
 class DB(db.Model):
     __tablename__ = 'events'
     id = db.Column(db.Integer, primary_key=True)
@@ -56,7 +58,7 @@ handler = WebhookHandler(CHANNEL_SECRET)
 
 @app.route("/", methods=['GET'])
 def hello_world():
-   return "hello world!"
+    return "hello world!"
 
 
 @app.route("/callback", methods=['POST'])
@@ -181,6 +183,39 @@ def handle_postback(event):
         line_bot_api.reply_message(
         event.reply_token,
         TextSendMessage(text=f"{selected_send_time}に設定しました"))
+
+
+# テストしてくよーーーーーーーーーーーー
+
+    # 予定名・予定日時・通知時刻をDBから取り出して定義する
+    # event_name = event_name
+    # event_datetime = event_datetime
+    # send_time = send_time
+
+    DataList = db.session.query(DB).get(id)
+    event_name = DataList.event_name
+    event_datetime = DataList.event_datetime
+    send_time = DataList.send_time
+
+
+    while True:
+        now = datetime.datetime.now() #現在の日時を取得
+
+        # 目標日時を達成しているか確認
+        if now >= event_datetime:
+            break
+
+        # メッセージを送信する時間かどうかを確認
+        if now.time() == send_time:
+            A = event_datetime - now #現在の時刻と目標時刻の差分を出す
+            days = A.day
+            message = f"{event_name}まであと{days}日"
+
+            #メッセージを送信する処理を追加、イベント当日用のメッセージも追加したい
+
+            time.sleep(24 * 60 * 60) #次に時間を確認するまで24時間待つ（微調整必要）
+        else:
+            time.sleep(1) #次に時間を確認するまで1秒待つ
 
 
 if __name__ == "__main__":
