@@ -20,8 +20,6 @@ load_dotenv()
 
 
 app = Flask(__name__)
-
-
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///db.sqlite'
 db = SQLAlchemy(app)
 
@@ -34,10 +32,8 @@ class DB(db.Model):
     event_datetime = db.Column(db.DateTime)
     send_time = db.Column(db.Time)
     # , nullable=False
-
 with app.app_context():
     db.create_all()
-
     # とりあえず仮のデータを入れる
     event_datetime = datetime(2023, 2, 7, 18, 45, 0)
     send_time = time(6, 0, 0)
@@ -68,23 +64,22 @@ def hello_world():
 def callback():
     # get x-line-signature header value
     signature = request.headers['x-line-signature']
-
     # get request body as text
     body = request.get_data(as_text=True)
     app.logger.info("Request body: " + body)
-
     # handle webhook body
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
         print("Invalid signature. Please check your channel access token/channel secret.")
         abort(400)
-
     return 'OK'
 
 
 @handler.add(MessageEvent, message=TextMessage) #ユーザーからテキストメッセージを受け取ったとき
 def handle_message(event):
+    global user_id
+    user_id = event.source.user_id
 
     global user_id
     user_id = event.source.user_id
@@ -97,6 +92,20 @@ def handle_message(event):
     # 同じレコードにデータをいれるため、この後使うidを定義する
     results = DB.query.all() # リスト型で取り出されるので
     result = results[-1] # リストの最後尾(最新のデータ)を指定
+    global id
+    id = result.id
+    print(id)
+
+    # 日時選択アクションを定義
+    now = datetime.now()
+    current_time = now.strftime("%Y-%m-%dT%H:%M")  # フォーマットを指定して現在の日時を取得
+
+    db.session.add(DB(event_name=event_name)) # DBに格納
+    db.session.commit()
+    # 同じレコードにデータをいれるため、この後使うidを定義する
+    results = DB.query.all() # リスト型で取り出されるので
+    result = results[-1] # リストの最後尾(最新のデータ)を指定
+
     global id
     id = result.id
     print(id)
@@ -125,16 +134,12 @@ def handle_message(event):
         )
     )
     # 予定の日時を聞くメッセージを送信
-    line_bot_api.reply_message(
-        event.reply_token,
-        message
-    )
+    line_bot_api.reply_message(event.reply_token, message)
 
 
 @handler.add(PostbackEvent) #PostbackEventが発生したとき
 def handle_postback(event):
     data = event.postback.data
-
     if data == 'event_datetime': #予定の日時に対する回答だった場合
         selected_datetime = event.postback.params['datetime'] #ユーザーが選択した日時の値を取得
         print('user-select-event-datetime')
@@ -151,29 +156,25 @@ def handle_postback(event):
 
         # 時間選択アクションを定義
         message = TemplateSendMessage(
-		alt_text="アラーム",
-		template=ButtonsTemplate(
-			text="カウントダウンの通知を受け取る時間を設定してください",
-			title="通知時間を設定",
-			actions=[
-				DatetimePickerTemplateAction(
-					label='time_select',
-					data='send_time',
-					mode='time',
-					initial='06:00',
-					min='00:00',
-					max='23:59'
+        alt_text="アラーム",
+        template=ButtonsTemplate(
+            text="カウントダウンの通知を受け取る時間を設定してください",
+            title="通知時間を設定",
+            actions=[
+                DatetimePickerTemplateAction(
+                    label='time_select',
+                    data='send_time',
+                    mode='time',
+                    initial='06:00',
+                    min='00:00',
+                    max='23:59'
                         )
                     ]
                 )
             )
-
         #確認のメッセージと通知時刻を聞くメッセージを送信
-        messages = [TextSendMessage(text=f"{selected_datetime}に設定しました。"), message]
-        line_bot_api.reply_message(
-            event.reply_token,
-            messages
-        )
+        messages = [TextSendMessage(text=f"{selected_datetime}に設定したワン！"), message]
+        line_bot_api.reply_message(event.reply_token, messages)
 
     elif data == 'send_time': #通知時間に対する回答だった場合
         selected_send_time = event.postback.params['time'] #ユーザーが選択した通知時間の値を取得
@@ -193,7 +194,49 @@ def handle_postback(event):
         #確認のメッセージを送信
         line_bot_api.reply_message(
         event.reply_token,
-        TextSendMessage(text=f"{selected_send_time}に設定しました"))
+        TextSendMessage(text=f"{selected_send_time}に設定したワン！"))
+
+
+        #ーーーカウントダウンを行う＆メッセージを送信するーーー
+        # DBから取り出す
+        data_list = db.session.query(DB).get(id)
+        event_name = data_list.event_name
+        event_datetime = data_list.event_datetime  # 秒を含めない形式
+        send_time = data_list.send_time.strftime('%H:%M')  # 秒を含めない形式
+        print(event_datetime, event_name, send_time)  # 2023-02-06 10:00:00 event_name 07:00:00
+
+        #01 定期実行する関数を準備
+        def send_message():
+            print("タスク実行中")
+
+            event_datetime = data_list.event_datetime
+            now_datetime = datetime.now()
+            print(event_datetime, now_datetime)
+
+            diff = event_datetime - now_datetime
+            days_until_event = diff.days
+            print(days_until_event)
+            messages = [TextSendMessage(text=f"{event_name}まで残り{days_until_event}日だワン！"),
+            TextSendMessage(text="張り切っていくワン:犬の顔::肉球スタンプ:")]
+
+            if days_until_event == 0:
+                messages = [TextSendMessage(text=f"{event_name}当日だワン！"),
+                TextSendMessage(text="気合い入れてくワン:犬の顔::びっくり_赤:️")]
+
+            line_bot_api.push_message(user_id, messages)
+
+        #02 スケジュール登録
+        schedule.every().days.at(send_time).do(send_message)
+
+        #03 イベント実行
+        while True:
+            print('目標時間に達していないかチェック')
+            now_datetime = datetime.now()
+            if event_datetime < now_datetime:
+                break
+            schedule.run_pending()
+            sleep(10)
+            print('10秒待機中')
 
 
         data_list = db.session.query(DB).get(id)
@@ -209,3 +252,4 @@ def handle_postback(event):
 if __name__ == "__main__":
     # port = int(os.getenv("PORT"))
     app.run(host="localhost", port=8000)
+
