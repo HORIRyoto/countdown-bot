@@ -81,9 +81,6 @@ def handle_message(event):
     global user_id
     user_id = event.source.user_id
 
-    global user_id
-    user_id = event.source.user_id
-
     event_name = event.message.text #受け取ったテキストメッセージを取得
     print(event_name)
     db.session.add(DB(event_name=event_name)) # DBに格納
@@ -92,6 +89,7 @@ def handle_message(event):
     # 同じレコードにデータをいれるため、この後使うidを定義する
     results = DB.query.all() # リスト型で取り出されるので
     result = results[-1] # リストの最後尾(最新のデータ)を指定
+
     global id
     id = result.id
     print(id)
@@ -105,10 +103,6 @@ def handle_message(event):
     # 同じレコードにデータをいれるため、この後使うidを定義する
     results = DB.query.all() # リスト型で取り出されるので
     result = results[-1] # リストの最後尾(最新のデータ)を指定
-
-    global id
-    id = result.id
-    print(id)
 
     # 日時選択アクションを定義
     now = datetime.now()
@@ -217,11 +211,11 @@ def handle_postback(event):
             days_until_event = diff.days
             print(days_until_event)
             messages = [TextSendMessage(text=f"{event_name}まで残り{days_until_event}日だワン！"),
-            TextSendMessage(text="張り切っていくワン:犬の顔::肉球スタンプ:")]
+            TextSendMessage(text="張り切っていくワン！")]
 
             if days_until_event == 0:
                 messages = [TextSendMessage(text=f"{event_name}当日だワン！"),
-                TextSendMessage(text="気合い入れてくワン:犬の顔::びっくり_赤:️")]
+                TextSendMessage(text="気合い入れてくワン！！")]
 
             line_bot_api.push_message(user_id, messages)
 
@@ -252,4 +246,3 @@ def handle_postback(event):
 if __name__ == "__main__":
     # port = int(os.getenv("PORT"))
     app.run(host="localhost", port=8000)
-
