@@ -13,6 +13,7 @@ from time import sleep
 from datetime import datetime, time
 import schedule
 import os
+
 from dotenv import load_dotenv
 # .envファイルの内容を読み込む
 load_dotenv()
@@ -39,6 +40,7 @@ with app.app_context():
     db.session.add(DB(event_name="送別会", event_datetime=event_datetime, send_time=send_time))
     db.session.commit()
     # db.sqliteのファイルがない状態で実行したとき、上記のデータが格納されたSQLiteのファイルができてたら成功
+
 # # ちゃんと取り出せるかテストprint
 # with app.app_context():
 #     results = DB.query.all()
@@ -79,8 +81,24 @@ def handle_message(event):
     global user_id
     user_id = event.source.user_id
 
+    global user_id
+    user_id = event.source.user_id
+
     event_name = event.message.text #受け取ったテキストメッセージを取得
     print(event_name)
+    db.session.add(DB(event_name=event_name)) # DBに格納
+    db.session.commit()
+    
+    # 同じレコードにデータをいれるため、この後使うidを定義する
+    results = DB.query.all() # リスト型で取り出されるので
+    result = results[-1] # リストの最後尾(最新のデータ)を指定
+    global id
+    id = result.id
+    print(id)
+
+    # 日時選択アクションを定義
+    now = datetime.now()
+    current_time = now.strftime("%Y-%m-%dT%H:%M")  # フォーマットを指定して現在の日時を取得
 
     db.session.add(DB(event_name=event_name)) # DBに格納
     db.session.commit()
@@ -95,6 +113,7 @@ def handle_message(event):
     # 日時選択アクションを定義
     now = datetime.now()
     current_time = now.strftime("%Y-%m-%dT%H:%M")  # フォーマットを指定して現在の日時を取得
+
     message = TemplateSendMessage(
         alt_text="予定日時",
         template=ButtonsTemplate(
@@ -220,6 +239,17 @@ def handle_postback(event):
             print('10秒待機中')
 
 
+        data_list = db.session.query(DB).get(id)
+        event_name = data_list.event_name
+        event_datetime = data_list.event_datetime.strftime('%Y-%m-%d %H:%M')  # 秒を含めない形式
+        send_time = data_list.send_time.strftime('%H:%M')  # 秒を含めない形式
+        print(event_datetime, event_name, send_time)  # 2023-02-06 10:00:00 event_name 07:00:00
+
+
+        # ここにscheduleモジュールを使って、カウントダウンを行う＆メッセージを送る処理を実装していく
+
+
 if __name__ == "__main__":
     # port = int(os.getenv("PORT"))
     app.run(host="localhost", port=8000)
+
